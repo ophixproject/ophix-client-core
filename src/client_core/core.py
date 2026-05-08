@@ -1,0 +1,174 @@
+"""
+client_core.core
+~~~~~~~~~~~~~~~~
+Shared utility functions for all Tier 1 Ophix clients.
+"""
+
+import getpass
+import os
+import platform
+import sys
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+import requests
+from dotenv import find_dotenv, load_dotenv, set_key
+
+try:
+    import distro
+except ImportError:
+    distro = None
+
+
+def in_venv():
+    # type: () -> Optional[Path]
+    if hasattr(sys, "real_prefix") or sys.prefix != sys.base_prefix:
+        return Path(sys.prefix)
+    return None
+
+
+def find_project_root():
+    # type: () -> Path
+    cwd = Path.cwd()
+    venv_root = in_venv()
+    if venv_root:
+        return venv_root.parent
+    for parent in [cwd] + list(cwd.parents):
+        if (
+            (parent / "requirements.txt").exists()
+            or (parent / ".git").exists()
+            or (parent / ".env").exists()
+        ):
+            return parent
+    return cwd
+
+
+def ensure_env_file(config):
+    # type: (Any) -> Path
+    """Find or create the domain env file with secure permissions (600)."""
+    existing = find_dotenv(filename=config.env_file, usecwd=True)
+    if existing:
+        env_path = Path(existing)
+        try:
+            mode = env_path.stat().st_mode & 0o777
+            if mode != 0o600:
+                os.chmod(str(env_path), 0o600)
+                print("Secured permissions on {} (600)".format(env_path))
+        except Exception:
+            pass
+        return env_path
+    project_root = find_project_root()
+    env_path = project_root / config.env_file
+    fd = os.open(str(env_path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    os.close(fd)
+    print("Created {} with secure permissions (600)".format(env_path))
+    return env_path
+
+
+def detect_os_flavour():
+    # type: () -> str
+    system = platform.system()
+    if system == "Linux" and distro:
+        name = distro.name(pretty=True)
+        version = distro.version(best=True)
+        if name and version:
+            return "{} {}".format(name, version)
+        return name or "Linux"
+    if system == "Darwin":
+        return "macOS {}".format(platform.mac_ver()[0])
+    if system == "Windows":
+        return "Windows {}".format(platform.release())
+    return system
+
+
+def detect_invocation():
+    # type: () -> str
+    if sys.argv:
+        return " ".join(sys.argv[:2])
+    return "unknown"
+
+
+def build_client_headers(config, api_token=None):
+    # type: (Any, Optional[str]) -> Dict[str, str]
+    """Build standard request headers for a domain client.
+
+    Header prefix is derived from client_name: "task" → "X-Task-*".
+    """
+    prefix = "X-{}".format(config.client_name.capitalize())
+    headers = {
+        "{}-Client-Version".format(prefix): config.version,
+        "{}-Python-Version".format(prefix): "{}.{}.{}".format(
+            sys.version_info.major,
+            sys.version_info.minor,
+            sys.version_info.micro,
+        ),
+        "{}-OS-Type".format(prefix): platform.system().lower(),
+        "{}-OS".format(prefix): detect_os_flavour(),
+        "{}-User".format(prefix): getpass.getuser(),
+        "{}-Invocation".format(prefix): detect_invocation(),
+    }
+    venv_path = in_venv()
+    if venv_path:
+        headers["{}-Venv-Name".format(prefix)] = venv_path.name
+    if api_token:
+        headers["Authorization"] = "Token {}".format(api_token)
+    return headers
+
+
+def resolve_server_config(
+    config,
+    server_url=None,           # type: Optional[str]
+    api_token=None,            # type: Optional[str]
+    ca_cert=None,              # type: Optional[str]
+    return_env_path=False,     # type: bool
+    ignore_missing_keys=None,  # type: Optional[List[str]]
+):
+    # type: (...) -> tuple
+    """
+    Resolve server configuration from arguments, the domain env file, or the process environment.
+
+    Resolution order: explicit arguments → env file → os.getenv.
+
+    Keys listed in ignore_missing_keys skip the corresponding validation check.
+    This allows e.g. downloading the CA cert before a token has been registered,
+    or running doctor even when some values are absent.
+    """
+    if ignore_missing_keys is None:
+        ignore_missing_keys = []
+
+    env_path_found = None
+    env_file_path = find_dotenv(filename=config.env_file, usecwd=True)
+    if env_file_path:
+        load_dotenv(env_file_path)
+        env_path_found = env_file_path
+
+    server_url = server_url or os.getenv(config.server_url_key)
+    api_token = api_token or os.getenv(config.api_token_key)
+    ca_cert = ca_cert or os.getenv(config.ca_cert_key)
+
+    errors = []
+
+    if (not server_url) and (config.server_url_key not in ignore_missing_keys):
+        errors.append("Server URL not set ({})".format(config.server_url_key))
+
+    if (not api_token or len(api_token) != 64) and (config.api_token_key not in ignore_missing_keys):
+        errors.append(
+            "API token missing or invalid ({} — must be 64 hex chars)".format(config.api_token_key)
+        )
+
+    if ca_cert:
+        ca_path = Path(ca_cert)
+        if not ca_path.exists():
+            if config.ca_cert_key not in ignore_missing_keys:
+                errors.append("CA cert file not found at {}".format(ca_cert))
+            # Leave ca_cert as raw string so callers can still report the configured path
+        else:
+            ca_cert = str(ca_path.resolve())
+
+    if errors:
+        print("Error resolving server config:\n{}".format("\n".join(errors)))
+        sys.exit(1)
+
+    if return_env_path:
+        return server_url, api_token, ca_cert, env_path_found
+    return server_url, api_token, ca_cert
