@@ -137,7 +137,16 @@ def resolve_server_config(
         ignore_missing_keys = []
 
     env_path_found = None
-    env_file_path = find_dotenv(filename=config.env_file, usecwd=True)
+    # Check the project root first — this resolves correctly when cwd differs
+    # from the project directory, e.g. when called from a cron job (cwd = home dir).
+    # find_project_root() returns the venv parent when running inside a venv,
+    # which is where the env file lives regardless of cwd.
+    project_root = find_project_root()
+    candidate = project_root / config.env_file
+    if candidate.exists():
+        env_file_path = str(candidate)
+    else:
+        env_file_path = find_dotenv(filename=config.env_file, usecwd=True)
     if env_file_path:
         load_dotenv(env_file_path)
         env_path_found = env_file_path
