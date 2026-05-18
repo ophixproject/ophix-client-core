@@ -43,51 +43,63 @@ def _determine_repo_name():
     return venv_root.parent.name
 
 
-def _download_ca_cert(config):
-    # type: (ClientConfig) -> None
-    """Download CA cert from server and save to .<client_name>/ca-cert.pem."""
+def _download_ca_cert(config, update=False):
+    # type: (ClientConfig, bool) -> None
     server_url, _, ca_cert_existing, env_path_str = resolve_server_config(
         config,
         return_env_path=True,
         ignore_missing_keys=[config.api_token_key],
     )
 
-    if ca_cert_existing and Path(ca_cert_existing).exists():
-        print("Warning: {} already points to an existing file ({}).".format(
-            config.ca_cert_key, ca_cert_existing))
-        print("Remove or update that entry in {} first.".format(config.env_file))
-        sys.exit(1)
+    if update:
+        if not ca_cert_existing or not Path(ca_cert_existing).exists():
+            print("Error: no existing CA certificate found. "
+                  "Use 'download ca-cert' for first-time install.")
+            sys.exit(1)
+        verify = ca_cert_existing
+        cert_path = Path(ca_cert_existing)
+    else:
+        if ca_cert_existing and Path(ca_cert_existing).exists():
+            print("Warning: {} already points to an existing file ({}).".format(
+                config.ca_cert_key, ca_cert_existing))
+            print("Use '--update' to replace an existing CA certificate.")
+            sys.exit(1)
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        verify = False
+        cert_path = None
 
     url = "{}/api/server/ca-cert/".format(server_url.rstrip("/"))
     headers = build_client_headers(config)
 
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     try:
-        resp = requests.get(url, headers=headers, verify=False)
+        resp = requests.get(url, headers=headers, verify=verify)
         resp.raise_for_status()
     except requests.RequestException as e:
         print("Failed to download CA certificate from {}: {}".format(url, e))
         sys.exit(1)
 
-    filename = "ca-cert.pem"
-    cd = resp.headers.get("Content-Disposition")
-    if cd:
-        m = re.search(r'filename="?([^"]+)"?', cd)
-        if m:
-            filename = m.group(1)
-
-    project_root = find_project_root()
-    cert_dir = project_root / ".{}".format(config.client_name)
-    cert_dir.mkdir(exist_ok=True)
-    cert_path = cert_dir / filename
+    if cert_path is None:
+        filename = "ca-cert.pem"
+        cd = resp.headers.get("Content-Disposition")
+        if cd:
+            m = re.search(r'filename="?([^"]+)"?', cd)
+            if m:
+                filename = m.group(1)
+        project_root = find_project_root()
+        cert_dir = project_root / ".{}".format(config.client_name)
+        cert_dir.mkdir(exist_ok=True)
+        cert_path = cert_dir / filename
 
     with open(str(cert_path), "wb") as f:
         f.write(resp.content)
 
-    env_path = Path(env_path_str) if env_path_str else ensure_env_file(config)
-    set_key(str(env_path), config.ca_cert_key, str(cert_path))
-    print("CA certificate saved to: {}".format(cert_path))
-    print("{} updated with {}={}".format(config.env_file, config.ca_cert_key, cert_path))
+    if update:
+        print("CA certificate updated at: {}".format(cert_path))
+    else:
+        env_path = Path(env_path_str) if env_path_str else ensure_env_file(config)
+        set_key(str(env_path), config.ca_cert_key, str(cert_path))
+        print("CA certificate saved to: {}".format(cert_path))
+        print("{} updated with {}={}".format(config.env_file, config.ca_cert_key, cert_path))
 
 
 def _register_client(config, name, deployment_ref=None):
@@ -195,7 +207,7 @@ def cmd_set(config, args):
 
 def cmd_download(config, args):
     if args.resource == "ca-cert":
-        _download_ca_cert(config)
+        _download_ca_cert(config, update=getattr(args, "update", False))
     else:
         print("Unknown resource '{}'. Valid resources: ca-cert".format(args.resource))
         sys.exit(1)
@@ -454,6 +466,8 @@ def build_commands(config):
             "help": "Download resources from the server",
             "arguments": [
                 {"name": "resource", "choices": ["ca-cert"], "help": "Resource to download"},
+                {"name": "--update", "action": "store_true",
+                 "help": "Replace existing CA certificate, using current cert to verify SSL"},
             ],
             "handler": p(cmd_download, config),
         },
