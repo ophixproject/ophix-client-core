@@ -211,13 +211,14 @@ def cmd_rotate_token(config, args):
     )
 
     new_token = secrets.token_hex(32)
+    verify = ca_cert if ca_cert else True
+
+    # Step 1: send the new token to the server
     headers = build_client_headers(config, api_token=old_token)
     url = "{}/api/client/self/rotate-token/".format(server_url.rstrip("/"))
-
     try:
         resp = requests.post(
-            url, headers=headers, json={"new_token": new_token},
-            verify=ca_cert if ca_cert else True,
+            url, headers=headers, json={"new_token": new_token}, verify=verify,
         )
         resp.raise_for_status()
     except requests.HTTPError:
@@ -232,8 +233,26 @@ def cmd_rotate_token(config, args):
         print("\nFailed to rotate API token — network error: {}".format(e))
         sys.exit(1)
 
+    # Step 2: validate the new token before writing it locally
+    test_headers = build_client_headers(config, api_token=new_token)
+    test_url = "{}/api/client/self/".format(server_url.rstrip("/"))
+    try:
+        test_resp = requests.get(test_url, headers=test_headers, verify=verify)
+    except requests.RequestException as e:
+        print("\nToken sent but validation call failed (network error): {}".format(e))
+        print("Local env file NOT updated. Old token may still be active.")
+        sys.exit(1)
+
+    if test_resp.status_code != 200:
+        print("\nToken rotation failed: new token validation returned {}.".format(
+            test_resp.status_code
+        ))
+        print("Local env file NOT updated. Old token is still active.")
+        sys.exit(1)
+
+    # Step 3: only now persist the new token
     set_key(str(env_path_str), config.api_token_key, new_token)
-    print("API token rotated successfully. {} updated.".format(env_path_str))
+    print("API token rotated and validated. {} updated.".format(env_path_str))
 
 
 def cmd_info(config, args):
