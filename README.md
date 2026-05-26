@@ -1,6 +1,6 @@
 # ophix-client-core
 
-Shared base library for [Ophix Project](https://ophixproject.com) Tier 1 clients.
+Shared base library for [Ophix Project](https://ophix.io) Tier 1 clients.
 
 Provides the common lifecycle commands, HTTP utilities, and CLI builder that every domain client depends on. Domain clients (`ophix-task-client`, `ophix-cred-client`, etc.) import from here and add only their artifact-specific API calls on top.
 
