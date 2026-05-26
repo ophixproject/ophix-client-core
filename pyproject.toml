@@ -12,11 +12,34 @@ license = "MIT"
 authors = [
     { name = "Ophix Project" }
 ]
+keywords = ["ophix", "cli", "client", "fleet management"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Systems Administration",
+]
 dependencies = [
     "requests>=2.32.5",
     "python-dotenv>=1.2.1",
     "distro>=1.9.0",
 ]
+
+[project.urls]
+Homepage = "https://ophix.io"
+Documentation = "https://github.com/ophixproject/ophix-client-core#readme"
+Source = "https://github.com/ophixproject/ophix-client-core"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
