@@ -22,6 +22,10 @@ from dotenv import find_dotenv, set_key
 
 from client_core.config import ClientConfig
 from client_core.core import (
+    api_delete,
+    api_get,
+    api_patch,
+    api_post,
     build_client_headers,
     check_rotation_signal,
     ensure_env_file,
