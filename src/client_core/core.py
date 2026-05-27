@@ -117,12 +117,7 @@ def build_client_headers(config, api_token=None):
 
 def check_rotation_signal(response):
     # type: (Any) -> bool
-    """
-    Return True if the server has signalled that token rotation is required.
-
-    Prints a warning to stderr when the header is present so it is visible
-    in cron logs without interrupting the normal output stream.
-    """
+    """Return True if the server has signalled that token rotation is required."""
     if response.headers.get("X-Token-Rotation-Required", "").lower() == "true":
         print(
             "WARNING: server has requested token rotation. "
@@ -131,6 +126,39 @@ def check_rotation_signal(response):
         )
         return True
     return False
+
+
+def _api_request(method, config, url, **kwargs):
+    # type: (str, Any, str, ...) -> Any
+    """Common wrapper: inject auth headers and check the rotation signal."""
+    headers = kwargs.pop("headers", build_client_headers(config))
+    resp = requests.request(method, url, headers=headers, **kwargs)
+    check_rotation_signal(resp)
+    return resp
+
+
+def api_get(config, url, **kwargs):
+    # type: (Any, str, ...) -> Any
+    """Authenticated GET with automatic rotation signal check."""
+    return _api_request("GET", config, url, **kwargs)
+
+
+def api_post(config, url, **kwargs):
+    # type: (Any, str, ...) -> Any
+    """Authenticated POST with automatic rotation signal check."""
+    return _api_request("POST", config, url, **kwargs)
+
+
+def api_patch(config, url, **kwargs):
+    # type: (Any, str, ...) -> Any
+    """Authenticated PATCH with automatic rotation signal check."""
+    return _api_request("PATCH", config, url, **kwargs)
+
+
+def api_delete(config, url, **kwargs):
+    # type: (Any, str, ...) -> Any
+    """Authenticated DELETE with automatic rotation signal check."""
+    return _api_request("DELETE", config, url, **kwargs)
 
 
 def resolve_server_config(
