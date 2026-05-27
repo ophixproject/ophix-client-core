@@ -49,8 +49,8 @@ def _determine_repo_name():
     return venv_root.parent.name
 
 
-def _download_ca_cert(config, update=False):
-    # type: (ClientConfig, bool) -> None
+def _download_ca_cert(config, update=False, dest_path=None):
+    # type: (ClientConfig, bool, Optional[str]) -> None
     server_url, _, ca_cert_existing, env_path_str = resolve_server_config(
         config,
         return_env_path=True,
@@ -65,14 +65,14 @@ def _download_ca_cert(config, update=False):
         verify = ca_cert_existing
         cert_path = Path(ca_cert_existing)
     else:
-        if ca_cert_existing and Path(ca_cert_existing).exists():
+        if dest_path is None and ca_cert_existing and Path(ca_cert_existing).exists():
             print("Warning: {} already points to an existing file ({}).".format(
                 config.ca_cert_key, ca_cert_existing))
             print("Use '--update' to replace an existing CA certificate.")
             sys.exit(1)
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         verify = False
-        cert_path = None
+        cert_path = Path(dest_path) if dest_path is not None else None
 
     url = "{}/api/server/ca-cert/".format(server_url.rstrip("/"))
     headers = build_client_headers(config)
@@ -213,7 +213,7 @@ def cmd_set(config, args):
 
 def cmd_download(config, args):
     if args.resource == "ca-cert":
-        _download_ca_cert(config, update=getattr(args, "update", False))
+        _download_ca_cert(config, update=getattr(args, "update", False), dest_path=getattr(args, "out", None))
     else:
         print("Unknown resource '{}'. Valid resources: ca-cert".format(args.resource))
         sys.exit(1)
@@ -235,7 +235,7 @@ def cmd_rotate_token(config, args):
     headers = build_client_headers(config, api_token=old_token)
     url = "{}/api/client/self/rotate-token/".format(server_url.rstrip("/"))
     try:
-        resp = requests.post(
+        resp = api_post(
             url, headers=headers, json={"new_token": new_token}, verify=verify,
         )
         resp.raise_for_status()
@@ -255,7 +255,7 @@ def cmd_rotate_token(config, args):
     test_headers = build_client_headers(config, api_token=new_token)
     test_url = "{}/api/client/self/".format(server_url.rstrip("/"))
     try:
-        test_resp = requests.get(test_url, headers=test_headers, verify=verify)
+        test_resp = api_get(test_url, headers=test_headers, verify=verify)
     except requests.RequestException as e:
         print("\nToken sent but validation call failed (network error): {}".format(e))
         print("Local env file NOT updated. Old token may still be active.")
@@ -278,7 +278,7 @@ def cmd_info(config, args):
     headers = build_client_headers(config, api_token=api_token)
 
     try:
-        resp = requests.get(
+        resp = api_get(
             "{}/api/client/self/".format(server_url.rstrip("/")),
             headers=headers,
             verify=ca_cert or True,
@@ -362,7 +362,7 @@ def cmd_doctor(config, args):
     url = "{}/api/client/self/".format(server_url.rstrip("/"))
 
     try:
-        resp = requests.get(url, headers=headers, verify=ca_cert or True, timeout=5)
+        resp = api_get(url, headers=headers, verify=ca_cert or True, timeout=5)
         resp.raise_for_status()
     except requests.exceptions.SSLError as e:
         print("  TLS error: {}".format(e))
@@ -409,7 +409,7 @@ def cmd_update(config, args):
     url = "{}/api/client/self/update/".format(server_url.rstrip("/"))
 
     try:
-        resp = requests.patch(url, headers=headers, json=payload, verify=ca_cert if ca_cert else True)
+        resp = api_patch(url, headers=headers, json=payload, verify=ca_cert if ca_cert else True)
         resp.raise_for_status()
     except requests.HTTPError:
         try:
@@ -474,6 +474,8 @@ def build_commands(config):
                 {"name": "resource", "choices": ["ca-cert"], "help": "Resource to download"},
                 {"name": "--update", "action": "store_true",
                  "help": "Replace existing CA certificate, using current cert to verify SSL"},
+                {"name": "--out", "dest": "out", "default": None,
+                 "help": "Save to this path instead of the default location"},
             ],
             "handler": p(cmd_download, config),
         },
