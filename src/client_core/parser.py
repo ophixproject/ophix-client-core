@@ -53,6 +53,8 @@ def make_main(config, commands):
     # type: (Any, Mapping[str, dict]) -> Any
     """Return a main() callable for the given config and commands."""
     def main():
+        from client_core.core import set_active_config
+        set_active_config(config)
         parser = build_parser(config, commands)
         args = parser.parse_args()
         args.func(args)

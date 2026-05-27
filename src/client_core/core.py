@@ -7,6 +7,7 @@ Shared utility functions for all Tier 1 Ophix clients.
 import getpass
 import os
 import platform
+import secrets
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -115,17 +116,91 @@ def build_client_headers(config, api_token=None):
     return headers
 
 
+# ---------------------------------------------------------------------------
+# Automatic token rotation
+# ---------------------------------------------------------------------------
+
+_active_config = None  # type: Any
+
+
+def set_active_config(config):
+    # type: (Any) -> None
+    """Register the active ClientConfig for automatic token rotation."""
+    global _active_config
+    _active_config = config
+
+
+def _auto_rotate_token(config):
+    # type: (Any) -> None
+    """Perform token rotation triggered by a server signal. Silent on success, warns on failure."""
+    global _active_config
+    saved = _active_config
+    _active_config = None  # prevent re-entry if rotation calls trigger the signal again
+    try:
+        try:
+            server_url, old_token, ca_cert, env_path_str = resolve_server_config(
+                config, return_env_path=True
+            )
+        except SystemExit:
+            print("Auto-rotation: config error. Run 'rotate-token' manually.", file=sys.stderr)
+            return
+
+        new_token = secrets.token_hex(32)
+        verify = ca_cert if ca_cert else True
+        headers = build_client_headers(config, api_token=old_token)
+
+        try:
+            resp = api_post(
+                "{}/api/client/self/rotate-token/".format(server_url.rstrip("/")),
+                headers=headers,
+                json={"new_token": new_token},
+                verify=verify,
+            )
+            resp.raise_for_status()
+        except Exception as e:
+            print("Auto-rotation failed: {}. Run 'rotate-token' manually.".format(e), file=sys.stderr)
+            return
+
+        try:
+            test_resp = api_get(
+                "{}/api/client/self/".format(server_url.rstrip("/")),
+                headers=build_client_headers(config, api_token=new_token),
+                verify=verify,
+            )
+            if test_resp.status_code != 200:
+                raise Exception("validation returned {}".format(test_resp.status_code))
+        except Exception as e:
+            print("Auto-rotation: new token failed validation: {}. Run 'rotate-token' manually.".format(e), file=sys.stderr)
+            return
+
+        set_key(str(env_path_str), config.api_token_key, new_token)
+        print("Token rotated automatically ({}).".format(config.client_name), file=sys.stderr)
+    finally:
+        _active_config = saved
+
+
 def check_rotation_signal(response):
     # type: (Any) -> bool
-    """Return True if the server has signalled that token rotation is required."""
-    if response.headers.get("X-Token-Rotation-Required", "").lower() == "true":
-        print(
-            "WARNING: server has requested token rotation. "
-            "Run 'rotate-token' at your earliest convenience.",
-            file=sys.stderr,
-        )
-        return True
-    return False
+    """Check response headers and rotate automatically if configured to do so."""
+    required = response.headers.get("X-Token-Rotation-Required", "").lower() == "true"
+    warning = response.headers.get("X-Token-Rotation-Warning", "").lower() == "true"
+
+    if not (required or warning):
+        return False
+
+    if _active_config is not None:
+        rotate_on_required = os.getenv("ROTATE_ON_REQUIRED", "true").lower() != "false"
+        rotate_on_warning = os.getenv("ROTATE_ON_WARNING", "true").lower() != "false"
+
+        if (required and rotate_on_required) or (warning and rotate_on_warning):
+            _auto_rotate_token(_active_config)
+            return True
+
+    if required:
+        print("WARNING: server has requested token rotation. Run 'rotate-token'.", file=sys.stderr)
+    else:
+        print("WARNING: token approaching rotation deadline. Run 'rotate-token'.", file=sys.stderr)
+    return True
 
 
 def _api_request(method, url, **kwargs):
