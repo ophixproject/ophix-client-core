@@ -128,37 +128,42 @@ def check_rotation_signal(response):
     return False
 
 
-def _api_request(method, config, url, **kwargs):
-    # type: (str, Any, str, ...) -> Any
-    """Common wrapper: inject auth headers and check the rotation signal."""
-    headers = kwargs.pop("headers", build_client_headers(config))
-    resp = requests.request(method, url, headers=headers, **kwargs)
+def _api_request(method, url, **kwargs):
+    # type: (str, str, ...) -> Any
+    """Make an HTTP request and check for the rotation signal header."""
+    resp = requests.request(method, url, **kwargs)
     check_rotation_signal(resp)
     return resp
 
 
-def api_get(config, url, **kwargs):
-    # type: (Any, str, ...) -> Any
-    """Authenticated GET with automatic rotation signal check."""
-    return _api_request("GET", config, url, **kwargs)
+def api_get(url, **kwargs):
+    # type: (str, ...) -> Any
+    """GET with automatic rotation signal check. Drop-in for requests.get()."""
+    return _api_request("GET", url, **kwargs)
 
 
-def api_post(config, url, **kwargs):
-    # type: (Any, str, ...) -> Any
-    """Authenticated POST with automatic rotation signal check."""
-    return _api_request("POST", config, url, **kwargs)
+def api_post(url, **kwargs):
+    # type: (str, ...) -> Any
+    """POST with automatic rotation signal check. Drop-in for requests.post()."""
+    return _api_request("POST", url, **kwargs)
 
 
-def api_patch(config, url, **kwargs):
-    # type: (Any, str, ...) -> Any
-    """Authenticated PATCH with automatic rotation signal check."""
-    return _api_request("PATCH", config, url, **kwargs)
+def api_patch(url, **kwargs):
+    # type: (str, ...) -> Any
+    """PATCH with automatic rotation signal check. Drop-in for requests.patch()."""
+    return _api_request("PATCH", url, **kwargs)
 
 
-def api_delete(config, url, **kwargs):
-    # type: (Any, str, ...) -> Any
-    """Authenticated DELETE with automatic rotation signal check."""
-    return _api_request("DELETE", config, url, **kwargs)
+def api_put(url, **kwargs):
+    # type: (str, ...) -> Any
+    """PUT with automatic rotation signal check. Drop-in for requests.put()."""
+    return _api_request("PUT", url, **kwargs)
+
+
+def api_delete(url, **kwargs):
+    # type: (str, ...) -> Any
+    """DELETE with automatic rotation signal check. Drop-in for requests.delete()."""
+    return _api_request("DELETE", url, **kwargs)
 
 
 def resolve_server_config(

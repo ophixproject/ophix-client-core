@@ -26,6 +26,7 @@ from client_core.core import (
     api_get,
     api_patch,
     api_post,
+    api_put,
     build_client_headers,
     check_rotation_signal,
     ensure_env_file,
