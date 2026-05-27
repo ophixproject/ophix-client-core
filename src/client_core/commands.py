@@ -23,6 +23,7 @@ from dotenv import find_dotenv, set_key
 from client_core.config import ClientConfig
 from client_core.core import (
     build_client_headers,
+    check_rotation_signal,
     ensure_env_file,
     find_project_root,
     in_venv,

@@ -115,6 +115,24 @@ def build_client_headers(config, api_token=None):
     return headers
 
 
+def check_rotation_signal(response):
+    # type: (Any) -> bool
+    """
+    Return True if the server has signalled that token rotation is required.
+
+    Prints a warning to stderr when the header is present so it is visible
+    in cron logs without interrupting the normal output stream.
+    """
+    if response.headers.get("X-Token-Rotation-Required", "").lower() == "true":
+        print(
+            "WARNING: server has requested token rotation. "
+            "Run 'rotate-token' at your earliest convenience.",
+            file=sys.stderr,
+        )
+        return True
+    return False
+
+
 def resolve_server_config(
     config,
     server_url=None,           # type: Optional[str]
