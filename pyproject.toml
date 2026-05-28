@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ophix-client-core"
-version = "2026.05.28.01"
+version = "2026.05.29.01"
 description = "Shared base library for Ophix Tier 1 clients"
 readme = "README.md"
 requires-python = ">=3.7"

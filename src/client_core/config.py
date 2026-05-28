@@ -17,3 +17,4 @@ class ClientConfig:
     ca_cert_key: str     # env var for the CA cert path, e.g. "TASKSERVER_CA_CERT"
     client_name: str     # short name driving header prefix + cert dir, e.g. "task"
     version: str         # package version string
+    package_name: str = ""  # pip package name, e.g. "ophix-task-client"; sent as X-Ophix-Client-Package
