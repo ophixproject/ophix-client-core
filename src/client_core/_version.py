@@ -1,1 +1,2 @@
-__version__ = "2026.05.28.01"
+__version__ = "2026.05.29.01"
+__package_name__ = "ophix-client-core"

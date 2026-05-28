@@ -111,6 +111,8 @@ def build_client_headers(config, api_token=None):
     venv_path = in_venv()
     if venv_path:
         headers["{}-Venv-Name".format(prefix)] = venv_path.name
+    if getattr(config, "package_name", None):
+        headers["X-Ophix-Client-Package"] = config.package_name
     if api_token:
         headers["Authorization"] = "Token {}".format(api_token)
     return headers
