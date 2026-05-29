@@ -13,12 +13,18 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import requests
-from dotenv import find_dotenv, load_dotenv, set_key
+from dotenv import dotenv_values, find_dotenv, load_dotenv, set_key
 
 try:
     import distro
 except ImportError:
     distro = None
+
+try:
+    import fcntl
+    _HAS_FLOCK = True
+except ImportError:
+    _HAS_FLOCK = False  # Windows — lock is skipped, race window remains
 
 
 def in_venv():
@@ -153,7 +159,16 @@ def set_active_config(config):
 
 def _auto_rotate_token(config):
     # type: (Any) -> None
-    """Perform token rotation triggered by a server signal. Silent on success, warns on failure."""
+    """Perform token rotation triggered by a server signal. Silent on success, warns on failure.
+
+    Uses an exclusive flock on {env_file}.lock to serialise concurrent rotation
+    attempts from multiple processes sharing the same env file. After acquiring
+    the lock each process re-reads the env file; if the token already changed
+    (another process won the race) it adopts the new token and returns without
+    hitting the server. The lockfile is never deleted — the OS releases the lock
+    automatically on process exit or fd close, so a crashed process cannot leave
+    a stale lock.
+    """
     global _active_config
     saved = _active_config
     _active_config = None  # prevent re-entry if rotation calls trigger the signal again
@@ -166,39 +181,61 @@ def _auto_rotate_token(config):
             print("Auto-rotation: config error. Run 'rotate-token' manually.", file=sys.stderr)
             return
 
-        new_token = secrets.token_hex(32)
-        verify = ca_cert if ca_cert else True
-        headers = build_client_headers(config, api_token=old_token)
+        # Acquire exclusive lock before touching the token.
+        lock_fd = None
+        if _HAS_FLOCK and env_path_str:
+            try:
+                lock_fd = open("{}.lock".format(env_path_str), "a")
+                fcntl.flock(lock_fd, fcntl.LOCK_EX)
+
+                # Re-read the env file now that we hold the lock.
+                # If another process already rotated, adopt the new token and bail.
+                current_values = dotenv_values(env_path_str)
+                current_token = current_values.get(config.api_token_key, "")
+                if current_token and current_token != old_token:
+                    os.environ[config.api_token_key] = current_token
+                    return
+            except OSError:
+                pass  # lock failed — proceed without it
 
         try:
-            resp = api_post(
-                "{}/api/client/self/rotate-token/".format(server_url.rstrip("/")),
-                headers=headers,
-                json={"new_token": new_token},
-                verify=verify,
-            )
-            resp.raise_for_status()
-        except Exception as e:
-            print("Auto-rotation failed: {}. Run 'rotate-token' manually.".format(e), file=sys.stderr)
-            return
+            new_token = secrets.token_hex(32)
+            verify = ca_cert if ca_cert else True
+            headers = build_client_headers(config, api_token=old_token)
 
-        try:
-            test_resp = api_get(
-                "{}/api/client/self/".format(server_url.rstrip("/")),
-                headers=build_client_headers(config, api_token=new_token),
-                verify=verify,
-            )
-            if test_resp.status_code != 200:
-                raise Exception("validation returned {}".format(test_resp.status_code))
-        except Exception as e:
-            print("Auto-rotation: new token failed validation: {}. Run 'rotate-token' manually.".format(e), file=sys.stderr)
-            return
+            try:
+                resp = api_post(
+                    "{}/api/client/self/rotate-token/".format(server_url.rstrip("/")),
+                    headers=headers,
+                    json={"new_token": new_token},
+                    verify=verify,
+                )
+                resp.raise_for_status()
+            except Exception as e:
+                print("Auto-rotation failed: {}. Run 'rotate-token' manually.".format(e), file=sys.stderr)
+                return
 
-        global _rotation_just_occurred
-        set_key(str(env_path_str), config.api_token_key, new_token)
-        os.environ[config.api_token_key] = new_token  # keep os.environ in sync so re-fetch uses the new token
-        _rotation_just_occurred = True
-        print("Token rotated automatically ({}).".format(config.client_name), file=sys.stderr)
+            try:
+                test_resp = api_get(
+                    "{}/api/client/self/".format(server_url.rstrip("/")),
+                    headers=build_client_headers(config, api_token=new_token),
+                    verify=verify,
+                )
+                if test_resp.status_code != 200:
+                    raise Exception("validation returned {}".format(test_resp.status_code))
+            except Exception as e:
+                print("Auto-rotation: new token failed validation: {}. Run 'rotate-token' manually.".format(e), file=sys.stderr)
+                return
+
+            global _rotation_just_occurred
+            set_key(str(env_path_str), config.api_token_key, new_token)
+            os.environ[config.api_token_key] = new_token
+            _rotation_just_occurred = True
+            print("Token rotated automatically ({}).".format(config.client_name), file=sys.stderr)
+        finally:
+            if lock_fd is not None:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                lock_fd.close()
     finally:
         _active_config = saved
 
