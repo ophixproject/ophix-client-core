@@ -132,6 +132,16 @@ def build_client_headers(config, api_token=None):
 # ---------------------------------------------------------------------------
 
 _active_config = None  # type: Any
+_rotation_just_occurred = False
+
+
+def rotation_just_occurred():
+    # type: () -> bool
+    """Returns True (and resets the flag) if an auto-rotation just completed successfully."""
+    global _rotation_just_occurred
+    result = _rotation_just_occurred
+    _rotation_just_occurred = False
+    return result
 
 
 def set_active_config(config):
@@ -184,7 +194,9 @@ def _auto_rotate_token(config):
             print("Auto-rotation: new token failed validation: {}. Run 'rotate-token' manually.".format(e), file=sys.stderr)
             return
 
+        global _rotation_just_occurred
         set_key(str(env_path_str), config.api_token_key, new_token)
+        _rotation_just_occurred = True
         print("Token rotated automatically ({}).".format(config.client_name), file=sys.stderr)
     finally:
         _active_config = saved

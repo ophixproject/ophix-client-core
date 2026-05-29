@@ -33,6 +33,7 @@ from client_core.core import (
     find_project_root,
     in_venv,
     resolve_server_config,
+    rotation_just_occurred,
 )
 
 
@@ -276,13 +277,10 @@ def cmd_rotate_token(config, args):
 def cmd_info(config, args):
     server_url, api_token, ca_cert = resolve_server_config(config)
     headers = build_client_headers(config, api_token=api_token)
+    url = "{}/api/client/self/".format(server_url.rstrip("/"))
 
     try:
-        resp = api_get(
-            "{}/api/client/self/".format(server_url.rstrip("/")),
-            headers=headers,
-            verify=ca_cert or True,
-        )
+        resp = api_get(url, headers=headers, verify=ca_cert or True)
         resp.raise_for_status()
     except requests.HTTPError as e:
         print("Failed to fetch client info: {}".format(e))
@@ -290,6 +288,15 @@ def cmd_info(config, args):
     except requests.RequestException as e:
         print("Network error: {}".format(e))
         sys.exit(1)
+
+    if rotation_just_occurred():
+        _, api_token, _ = resolve_server_config(config)
+        try:
+            fresh = api_get(url, headers=build_client_headers(config, api_token=api_token), verify=ca_cert or True)
+            if fresh.status_code == 200:
+                resp = fresh
+        except Exception:
+            pass
 
     data = resp.json()
     print("Client name:         {}".format(data.get("name")))
@@ -377,6 +384,15 @@ def cmd_doctor(config, args):
         except Exception:
             print("  {}".format(e.response.text))
         return
+
+    if rotation_just_occurred():
+        _, fresh_token, _ = resolve_server_config(config)
+        try:
+            fresh = api_get(url, headers=build_client_headers(config, api_token=fresh_token), verify=ca_cert or True)
+            if fresh.status_code == 200:
+                resp = fresh
+        except Exception:
+            pass
 
     data = resp.json()
     print("  Authenticated successfully")
