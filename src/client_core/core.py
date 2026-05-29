@@ -196,6 +196,7 @@ def _auto_rotate_token(config):
 
         global _rotation_just_occurred
         set_key(str(env_path_str), config.api_token_key, new_token)
+        os.environ[config.api_token_key] = new_token  # keep os.environ in sync so re-fetch uses the new token
         _rotation_just_occurred = True
         print("Token rotated automatically ({}).".format(config.client_name), file=sys.stderr)
     finally:
