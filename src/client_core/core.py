@@ -47,9 +47,19 @@ def find_project_root():
 def ensure_env_file(config):
     # type: (Any) -> Path
     """Find or create the domain env file with secure permissions (600)."""
-    existing = find_dotenv(filename=config.env_file, usecwd=True)
-    if existing:
-        env_path = Path(existing)
+    project_root = find_project_root()
+    env_path = project_root / config.env_file
+
+    if not env_path.exists() and not in_venv():
+        # Outside a venv, search upward for an existing env file.
+        # Inside a venv we never traverse upward — the env file belongs
+        # in the venv parent only, to prevent inheriting a stale file
+        # from a previous installation elsewhere on the machine.
+        found = find_dotenv(filename=config.env_file, usecwd=True)
+        if found:
+            env_path = Path(found)
+
+    if env_path.exists():
         try:
             mode = env_path.stat().st_mode & 0o777
             if mode != 0o600:
@@ -58,8 +68,7 @@ def ensure_env_file(config):
         except Exception:
             pass
         return env_path
-    project_root = find_project_root()
-    env_path = project_root / config.env_file
+
     fd = os.open(str(env_path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     os.close(fd)
     print("Created {} with secure permissions (600)".format(env_path))
@@ -273,8 +282,10 @@ def resolve_server_config(
     candidate = project_root / config.env_file
     if candidate.exists():
         env_file_path = str(candidate)
-    else:
+    elif not in_venv():
         env_file_path = find_dotenv(filename=config.env_file, usecwd=True)
+    else:
+        env_file_path = None
     if env_file_path:
         load_dotenv(env_file_path)
         env_path_found = env_file_path
