@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Optional
 
 import requests
-from dotenv import find_dotenv, set_key
+from dotenv import set_key
 
 from client_core.config import ClientConfig
 from client_core.core import (
@@ -309,7 +309,16 @@ def cmd_info(config, args):
 def cmd_doctor(config, args):
     print("{} doctor\n".format(config.prog))
 
-    env_path_str = find_dotenv(filename=config.env_file, usecwd=True)
+    # Ignore all keys so resolve returns raw values without exiting; this also
+    # gives us the env path via the same venv-aware lookup used everywhere else
+    # (find_project_root() falls back to the venv parent dir, which is where
+    # the env file lives regardless of cwd — critical under cron/su where cwd
+    # is not the project directory).
+    server_url, api_token, ca_cert, env_path_str = resolve_server_config(
+        config,
+        return_env_path=True,
+        ignore_missing_keys=[config.server_url_key, config.api_token_key, config.ca_cert_key],
+    )
 
     if env_path_str:
         print("  ENV file: {}".format(env_path_str))
@@ -325,13 +334,6 @@ def cmd_doctor(config, args):
             print("  ENV permissions: {} (recommended: 600)".format(oct(mode)))
     except Exception as e:
         print("  ENV permissions: could not check ({})".format(e))
-
-    # Ignore all keys so resolve returns raw values without exiting
-    server_url, api_token, ca_cert, _ = resolve_server_config(
-        config,
-        return_env_path=True,
-        ignore_missing_keys=[config.server_url_key, config.api_token_key, config.ca_cert_key],
-    )
 
     if server_url:
         print("  {}: {}".format(config.server_url_key, server_url))
