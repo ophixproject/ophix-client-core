@@ -80,6 +80,11 @@ def _download_ca_cert(config, update=False, dest_path=None):
 
     try:
         resp = requests.get(url, headers=headers, verify=verify)
+        if resp.status_code == 404:
+            print("Server has no custom CA certificate configured — it is likely using a "
+                  "publicly trusted certificate (e.g. Let's Encrypt). Skipping CA cert "
+                  "installation; the system trust store will be used for TLS verification.")
+            return
         resp.raise_for_status()
     except requests.RequestException as e:
         print("Failed to download CA certificate from {}: {}".format(url, e))
@@ -159,6 +164,16 @@ def _register_client(config, name, deployment_ref=None):
         print("\nFailed to register client")
         print("HTTP Status: {}".format(resp.status_code))
         print("Server Response: {}".format(server_msg))
+        sys.exit(1)
+    except requests.exceptions.SSLError as e:
+        print("\nFailed to register client — TLS certificate could not be verified: {}".format(e))
+        if ca_cert:
+            print("A CA certificate is configured ({}), but the server's certificate still "
+                  "failed verification. Confirm the file is correct and matches the server, "
+                  "or run 'download ca-cert --update' to refresh it.".format(ca_cert))
+        else:
+            print("No CA certificate is configured for this client. If this server uses a "
+                  "private or self-signed certificate, run 'download ca-cert' first.")
         sys.exit(1)
     except requests.RequestException as e:
         print("\nFailed to register client — network error: {}".format(e))
