@@ -105,6 +105,8 @@ Each domain client uses its own env file (e.g. `.task.env`, `.cred.env`). `Clien
 
 The CA certificate is saved to `.<client_name>/ca-cert.pem` relative to the project root.
 
+If the server has no custom CA configured (e.g. it uses a publicly trusted certificate such as Let's Encrypt), `/api/server/ca-cert/` returns 404. Both `download ca-cert` and `quickstart` treat this as expected — they print an informational message and continue rather than failing, since the system trust store already covers a publicly signed certificate and no local CA file is needed.
+
 ---
 
 ## License
