@@ -1,8 +1,10 @@
 # ophix-client-core
 
-Shared base library for [Ophix Project](https://ophix.io) Tier 1 clients.
+**The shared foundation every [Ophix](https://ophix.io) client is built on.**
 
-Provides the common lifecycle commands, HTTP utilities, and CLI builder that every domain client depends on. Domain clients (`ophix-task-client`, `ophix-cred-client`, etc.) import from here and add only their artifact-specific API calls on top.
+Every fleet client — whichever domain it's fetching credentials, configs, certificates, or tasks for — needs the same underlying plumbing: registration, token rotation with post-rotation validation, HTTP handling, a consistent CLI. `ophix-client-core` is that shared foundation, so each Tier 1 client (`ophix-cred-client`, `ophix-task-client`, etc.) only has to implement the handful of API calls specific to its own domain.
+
+This package is automatically included with every Ophix client, no need to separately install it.
 
 ---
 
